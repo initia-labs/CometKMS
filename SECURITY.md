@@ -58,3 +58,10 @@ Operators should monitor cluster health and ensure:
 Under these conditions, CometKMS prevents double-signing even through repeated
 node restarts or leadership changes, at the cost of temporary signing pauses
 whenever safety cannot be guaranteed.
+
+## Disclaimer
+
+CometKMS is provided on an "as is" basis without warranties of any kind. The
+authors or distributors are not liable for damages, slashing penalties, or other
+losses that may result from running the software. Operators remain responsible
+for validating their deployments and monitoring production clusters.
