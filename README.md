@@ -85,3 +85,14 @@ make test
 ```
 
 CometKMS targets Go 1.24.3+. Contributions and feedback are welcome.
+
+## Security
+
+For details on double-sign protections, operational assumptions, and known
+availability trade-offs, see [`SECURITY.md`](SECURITY.md).
+
+## Disclaimer
+
+CometKMS is distributed in the hope that it will be useful, but comes without
+any warranties. Use it at your own risk; the authors and contributors accept no
+responsibility for downtime, slashing, or other damages arising from its use.
