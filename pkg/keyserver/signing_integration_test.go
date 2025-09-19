@@ -1,6 +1,7 @@
 package keyserver
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	cometlog "github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/privval"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	"github.com/cometbft/cometbft/types"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/raft"
 	"golang.org/x/sync/errgroup"
@@ -68,7 +70,7 @@ func TestKeyserverClusterHandlesSigningAndPreventsDoubleSign(t *testing.T) {
 		validatorEndpoint.Stop()
 	})
 
-	startKeyservers(t, ctx, cluster, baseKeyPath, baseStatePath, validatorAddr, testChainID)
+	startKeyservers(t, ctx, cluster, baseKeyPath, baseStatePath, []string{validatorAddr}, testChainID)
 
 	leader := waitForLeaderNode(t, cluster, 10*time.Second)
 	waitForValidatorConnection(t, signerClient, 10*time.Second)
@@ -182,7 +184,7 @@ func TestKeyserverConcurrentSigningWithLeaderChanges(t *testing.T) {
 		validatorEndpoint.Stop()
 	})
 
-	startKeyservers(t, ctx, cluster, baseKeyPath, baseStatePath, validatorAddr, testChainID)
+	startKeyservers(t, ctx, cluster, baseKeyPath, baseStatePath, []string{validatorAddr}, testChainID)
 
 	if _, err := waitForLeaderNodeCtx(cluster, 10*time.Second); err != nil {
 		t.Fatalf("leader setup: %v", err)
@@ -279,11 +281,141 @@ func TestKeyserverConcurrentSigningWithLeaderChanges(t *testing.T) {
 	waitForClusterSignHeight(t, cluster, maxHeight, 5*time.Second)
 }
 
-func startKeyservers(t *testing.T, ctx context.Context, cluster []*clusterNode, baseKeyPath, baseStatePath, validatorAddr, chainID string) {
+func TestKeyserverMultipleValidatorsRejectConflictingVotes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	peers := makeTestPeers(t, 3)
+	cluster := startRaftCluster(t, ctx, peers)
+	t.Cleanup(func() {
+		for _, node := range cluster {
+			closeClusterNode(t, node)
+		}
+	})
+
+	baseKeyDir := t.TempDir()
+	baseKeyPath := filepath.Join(baseKeyDir, "priv_key.json")
+	baseStatePath := filepath.Join(baseKeyDir, "priv_state.json")
+	basePV := privval.GenFilePV(baseKeyPath, baseStatePath)
+	basePV.Save()
+
+	validatorAddrA, endpointA, signerA := startValidator(t, testChainID)
+	validatorAddrB, endpointB, signerB := startValidator(t, testChainID)
+	t.Cleanup(func() {
+		if err := signerA.Close(); err != nil {
+			t.Logf("signer A close: %v", err)
+		}
+		if err := signerB.Close(); err != nil {
+			t.Logf("signer B close: %v", err)
+		}
+		endpointA.Stop()
+		endpointB.Stop()
+	})
+
+	startKeyservers(t, ctx, cluster, baseKeyPath, baseStatePath, []string{validatorAddrA, validatorAddrB}, testChainID)
+
+	leader := waitForLeaderNode(t, cluster, 10*time.Second)
+	waitForValidatorConnection(t, signerA, 10*time.Second)
+	waitForValidatorConnection(t, signerB, 10*time.Second)
+
+	validatorAddress := ed25519.GenPrivKey().PubKey().Address().Bytes()
+
+	initialTemplate := makeVote(30, 0x21, validatorAddress)
+	if _, err := signVoteWithRetry(t, signerA, testChainID, initialTemplate, 5*time.Second); err != nil {
+		t.Fatalf("initial sign vote: %v", err)
+	}
+	initialState := leader.node.GetLastSignState()
+	if initialState == nil {
+		t.Fatal("leader did not store initial sign state")
+	}
+	waitForClusterSignState(t, cluster, initialState, 5*time.Second)
+
+	targetHeight := initialState.Height + 1
+	voteA := makeVote(targetHeight, 0x31, validatorAddress)
+	voteB := makeVote(targetHeight, 0x32, validatorAddress)
+
+	type signResult struct {
+		name string
+		vote *cmtproto.Vote
+		err  error
+	}
+
+	results := make(chan signResult, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		attempt := cloneVote(voteA)
+		err := signerA.SignVote(testChainID, attempt)
+		results <- signResult{name: "validatorA", vote: attempt, err: err}
+	}()
+
+	go func() {
+		defer wg.Done()
+		attempt := cloneVote(voteB)
+		err := signerB.SignVote(testChainID, attempt)
+		results <- signResult{name: "validatorB", vote: attempt, err: err}
+	}()
+
+	wg.Wait()
+	close(results)
+
+	var success *signResult
+	failures := make([]signResult, 0, 1)
+	for res := range results {
+		if res.err == nil {
+			if success != nil {
+				t.Fatalf("expected exactly one successful signature, got additional success from %s", res.name)
+			}
+			copy := res
+			success = &copy
+			continue
+		}
+		failures = append(failures, res)
+		var remoteErr *privval.RemoteSignerError
+		if !errors.As(res.err, &remoteErr) {
+			t.Fatalf("expected remote signer error from %s, got %v", res.name, res.err)
+		}
+		if !strings.Contains(remoteErr.Description, "conflicting") {
+			t.Fatalf("unexpected error from %s: %v", res.name, res.err)
+		}
+	}
+
+	if success == nil {
+		t.Fatal("expected one validator to receive a signature successfully")
+	}
+	if len(failures) != 1 {
+		t.Fatalf("expected one conflicting signature to fail, got %d", len(failures))
+	}
+	if len(success.vote.Signature) == 0 {
+		t.Fatalf("successful vote from %s missing signature", success.name)
+	}
+	if len(failures[0].vote.Signature) != 0 {
+		t.Fatalf("failed vote from %s unexpectedly received a signature", failures[0].name)
+	}
+
+	waitForClusterSignHeight(t, cluster, targetHeight, 5*time.Second)
+	finalLeader := waitForLeaderNode(t, cluster, 5*time.Second)
+	state := finalLeader.node.GetLastSignState()
+	if state == nil || state.Height != targetHeight {
+		t.Fatalf("expected cluster height %d, got %+v", targetHeight, state)
+	}
+
+	expectedSignBytes := types.VoteSignBytes(testChainID, success.vote)
+	if !bytes.Equal(expectedSignBytes, state.SignBytes) {
+		t.Fatalf("leader sign bytes mismatch: expected %X, got %X", expectedSignBytes, []byte(state.SignBytes))
+	}
+}
+
+func startKeyservers(t *testing.T, ctx context.Context, cluster []*clusterNode, baseKeyPath, baseStatePath string, validatorAddrs []string, chainID string) {
 	t.Helper()
 
 	keysDir := t.TempDir()
-	validatorURI := fmt.Sprintf("tcp://%s", validatorAddr)
+	validatorURIs := make([]string, 0, len(validatorAddrs))
+	for _, addr := range validatorAddrs {
+		validatorURIs = append(validatorURIs, fmt.Sprintf("tcp://%s", addr))
+	}
 
 	for _, node := range cluster {
 		if node.shutdown {
@@ -302,7 +434,7 @@ func startKeyservers(t *testing.T, ctx context.Context, cluster []*clusterNode, 
 
 		cfg := Config{
 			ChainID:        chainID,
-			ValidatorAddrs: []string{validatorURI},
+			ValidatorAddrs: validatorURIs,
 			PrivKeyPath:    privKeyPath,
 			PrivStatePath:  privStatePath,
 			SignerID:       node.id,
