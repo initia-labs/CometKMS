@@ -73,7 +73,7 @@ Operational endpoints remain available for monitoring:
 
 ```bash
 curl http://10.0.0.10:8080/healthz           # liveness probe
-curl http://10.0.0.10:8080/v1/lease/status   # observe current signer
+curl http://10.0.0.10:8080/status            # observe current signer
 ```
 
 ## Development
