@@ -324,15 +324,13 @@ func TestKeyserverMultipleValidatorsRejectConflictingVotes(t *testing.T) {
 	if _, err := signVoteWithRetry(t, signerA, testChainID, initialTemplate, 5*time.Second); err != nil {
 		t.Fatalf("initial sign vote: %v", err)
 	}
-	initialState := leader.node.GetLastSignState()
-	if initialState == nil {
+	currentState := leader.node.GetLastSignState()
+	if currentState == nil {
 		t.Fatal("leader did not store initial sign state")
 	}
-	waitForClusterSignState(t, cluster, initialState, 5*time.Second)
+	waitForClusterSignState(t, cluster, currentState, 5*time.Second)
 
-	targetHeight := initialState.Height + 1
-	voteA := makeVote(targetHeight, 0x31, validatorAddress)
-	voteB := makeVote(targetHeight, 0x32, validatorAddress)
+	rnd := rand.New(rand.NewSource(1337))
 
 	type signResult struct {
 		name string
@@ -340,71 +338,91 @@ func TestKeyserverMultipleValidatorsRejectConflictingVotes(t *testing.T) {
 		err  error
 	}
 
-	results := make(chan signResult, 2)
-	var wg sync.WaitGroup
-	wg.Add(2)
+	const attempts = 20
+	for i := 0; i < attempts; i++ {
+		delta := int64(rnd.Intn(3) + 1)
+		targetHeight := currentState.Height + delta
+		voteA := makeVote(targetHeight, byte(rnd.Intn(0x40)+0x10), validatorAddress)
+		voteB := makeVote(targetHeight, byte(rnd.Intn(0x40)+0x50), validatorAddress)
 
-	go func() {
-		defer wg.Done()
-		attempt := cloneVote(voteA)
-		err := signerA.SignVote(testChainID, attempt)
-		results <- signResult{name: "validatorA", vote: attempt, err: err}
-	}()
+		results := make(chan signResult, 2)
+		var wg sync.WaitGroup
+		wg.Add(2)
 
-	go func() {
-		defer wg.Done()
-		attempt := cloneVote(voteB)
-		err := signerB.SignVote(testChainID, attempt)
-		results <- signResult{name: "validatorB", vote: attempt, err: err}
-	}()
+		callerA := func() {
+			defer wg.Done()
+			time.Sleep(time.Duration(rnd.Intn(30)) * time.Millisecond)
+			attempt := cloneVote(voteA)
+			err := signerA.SignVote(testChainID, attempt)
+			results <- signResult{name: "validatorA", vote: attempt, err: err}
+		}
 
-	wg.Wait()
-	close(results)
+		callerB := func() {
+			defer wg.Done()
+			time.Sleep(time.Duration(rnd.Intn(30)) * time.Millisecond)
+			attempt := cloneVote(voteB)
+			err := signerB.SignVote(testChainID, attempt)
+			results <- signResult{name: "validatorB", vote: attempt, err: err}
+		}
 
-	var success *signResult
-	failures := make([]signResult, 0, 1)
-	for res := range results {
-		if res.err == nil {
-			if success != nil {
-				t.Fatalf("expected exactly one successful signature, got additional success from %s", res.name)
+		if rnd.Intn(2) == 0 {
+			go callerA()
+			go callerB()
+		} else {
+			go callerB()
+			go callerA()
+		}
+
+		wg.Wait()
+		close(results)
+
+		var success *signResult
+		failures := make([]signResult, 0, 2)
+		for res := range results {
+			if res.err == nil {
+				if success != nil {
+					t.Fatalf("expected exactly one successful signature per height, got additional success from %s", res.name)
+				}
+				copy := res
+				success = &copy
+				continue
 			}
-			copy := res
-			success = &copy
-			continue
+			failures = append(failures, res)
+			var remoteErr *privval.RemoteSignerError
+			if !errors.As(res.err, &remoteErr) {
+				t.Fatalf("expected remote signer error from %s, got %v", res.name, res.err)
+			}
+			if !strings.Contains(remoteErr.Description, "conflicting") {
+				t.Fatalf("unexpected error from %s: %v", res.name, res.err)
+			}
 		}
-		failures = append(failures, res)
-		var remoteErr *privval.RemoteSignerError
-		if !errors.As(res.err, &remoteErr) {
-			t.Fatalf("expected remote signer error from %s, got %v", res.name, res.err)
+
+		if success == nil {
+			t.Fatal("expected one validator to receive a signature successfully")
 		}
-		if !strings.Contains(remoteErr.Description, "conflicting") {
-			t.Fatalf("unexpected error from %s: %v", res.name, res.err)
+		if len(failures) != 1 {
+			t.Fatalf("expected one conflicting signature to fail, got %d", len(failures))
 		}
-	}
+		if len(success.vote.Signature) == 0 {
+			t.Fatalf("successful vote from %s missing signature", success.name)
+		}
+		if len(failures[0].vote.Signature) != 0 {
+			t.Fatalf("failed vote from %s unexpectedly received a signature", failures[0].name)
+		}
 
-	if success == nil {
-		t.Fatal("expected one validator to receive a signature successfully")
-	}
-	if len(failures) != 1 {
-		t.Fatalf("expected one conflicting signature to fail, got %d", len(failures))
-	}
-	if len(success.vote.Signature) == 0 {
-		t.Fatalf("successful vote from %s missing signature", success.name)
-	}
-	if len(failures[0].vote.Signature) != 0 {
-		t.Fatalf("failed vote from %s unexpectedly received a signature", failures[0].name)
-	}
+		waitForClusterSignHeight(t, cluster, targetHeight, 5*time.Second)
+		leader = waitForLeaderNode(t, cluster, 5*time.Second)
+		state := leader.node.GetLastSignState()
+		if state == nil || state.Height != targetHeight {
+			t.Fatalf("expected cluster height %d, got %+v", targetHeight, state)
+		}
 
-	waitForClusterSignHeight(t, cluster, targetHeight, 5*time.Second)
-	finalLeader := waitForLeaderNode(t, cluster, 5*time.Second)
-	state := finalLeader.node.GetLastSignState()
-	if state == nil || state.Height != targetHeight {
-		t.Fatalf("expected cluster height %d, got %+v", targetHeight, state)
-	}
+		expectedSignBytes := types.VoteSignBytes(testChainID, success.vote)
+		if !bytes.Equal(expectedSignBytes, state.SignBytes) {
+			t.Fatalf("leader sign bytes mismatch at height %d: expected %X, got %X", targetHeight, expectedSignBytes, []byte(state.SignBytes))
+		}
 
-	expectedSignBytes := types.VoteSignBytes(testChainID, success.vote)
-	if !bytes.Equal(expectedSignBytes, state.SignBytes) {
-		t.Fatalf("leader sign bytes mismatch: expected %X, got %X", expectedSignBytes, []byte(state.SignBytes))
+		currentState = state
 	}
 }
 
