@@ -1,5 +1,9 @@
 # CometKMS
 
+[![Go Tests](https://github.com/initia-labs/CometKMS/actions/workflows/go-tests.yml/badge.svg?branch=main)](https://github.com/initia-labs/CometKMS/actions/workflows/go-tests.yml)
+[![Docker Publish](https://github.com/initia-labs/CometKMS/actions/workflows/docker-release.yml/badge.svg?branch=main)](https://github.com/initia-labs/CometKMS/actions/workflows/docker-release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/initia-labs/CometKMS)](https://goreportcard.com/report/github.com/initia-labs/CometKMS)
+
 CometKMS is a lightweight key management service designed to keep a single CometBFT signer active while coordinating multiple hot-standby replicas. It provides a simple HTTP API backed by a Raft quorum so only one signer answers CometBFT-style privval requests at any moment.
 
 ## Features
