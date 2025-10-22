@@ -198,7 +198,6 @@ func (n *Node) syncPeers(ctx context.Context, peers []Peer) error {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(500 * time.Millisecond):
-		default:
 		}
 
 		// keep check whether all peers are already known
