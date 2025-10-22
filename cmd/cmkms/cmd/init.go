@@ -11,7 +11,7 @@ import (
 func init() {
 	cmd := &cobra.Command{
 		Use:   "init",
-	Short: "Create the default CMKMS configuration",
+		Short: "Create the default CMKMS configuration",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ensureConfig(&homeDir)
 			privDir := filepath.Join(homeDir, "priv")
