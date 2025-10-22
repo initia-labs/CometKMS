@@ -13,7 +13,10 @@ func init() {
 		Use:   "init",
 		Short: "Create the default CMKMS configuration",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ensureConfig(&homeDir)
+			err := ensureConfig(&homeDir)
+			if err != nil {
+				return fmt.Errorf("failed to ensure config: %w", err)
+			}
 			privDir := filepath.Join(homeDir, "priv")
 			if err := os.MkdirAll(privDir, 0o755); err != nil {
 				return fmt.Errorf("failed to create priv directory: %w", err)

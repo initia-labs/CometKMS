@@ -11,7 +11,7 @@ var (
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&homeDir, "home", defaultHomeDir(), "CMKMS home directory")
-	cobra.OnInitialize(func() { ensureConfig(&homeDir) })
+	cobra.OnInitialize(func() { cobra.CheckErr(ensureConfig(&homeDir)) })
 }
 
 // Execute runs the root command.
