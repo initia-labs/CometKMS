@@ -131,6 +131,9 @@ func (s *Server) startSigner(ctx context.Context, g *errgroup.Group) error {
 	for _, addr := range s.cfg.ValidatorAddrs {
 		ve := newValidatorEndpoint(addr, s.newDialer(addr), s.cfg.ChainID, s.pv, s.logger)
 		if err := ve.start(ctx, g); err != nil {
+			for _, v := range validators {
+				v.stop()
+			}
 			s.mu.Unlock()
 			return fmt.Errorf("validator %s: %w", addr, err)
 		}
