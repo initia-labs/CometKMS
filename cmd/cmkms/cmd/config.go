@@ -182,13 +182,13 @@ func trimQuotes(val string) string {
 
 // writeDefaultConfig writes the scaffold config file if it does not yet exist.
 func writeDefaultConfig(path string) error {
-	content := `# Keystone configuration
-# Values can be overridden by flags or KEYSTONE_* environment variables.
+	content := `# CometKMS configuration
+# Values can be overridden by flags or COMETKMS_* environment variables.
 
-# Unique identifier for this Keystone node.
+# Unique identifier for this CometKMS node.
 id = "node0"
 
-# TCP address Keystone uses for its Raft transport.
+# TCP address CometKMS uses for its Raft transport.
 raft_addr = "127.0.0.1:9430"
 
 # HTTP listen address for status/admin APIs.
@@ -199,7 +199,7 @@ http_addr = ":8080"
 # empty the node bootstraps the cluster automatically.
 peer = []
 
-# CometBFT priv_validator_laddr entries that Keystone should connect to.
+# CometBFT priv_validator_laddr entries that CometKMS should connect to.
 # Provide multiple addresses in an array if desired.
 validator_addr = ["tcp://127.0.0.1:8080"]
 

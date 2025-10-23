@@ -23,7 +23,7 @@ import (
 	"github.com/initia-labs/CometKMS/pkg/fsm"
 )
 
-// Config captures the parameters required to start a Keystone raft node.
+// Config captures the parameters required to start a CometKMS raft node.
 type Config struct {
 	ID          string
 	RaftDir     string
@@ -139,9 +139,8 @@ func NewNode(cfg Config) (*Node, error) {
 	}
 
 	if cfg.Bootstrap {
-		localAddr := transport.LocalAddr()
-		configuration := raft.Configuration{Servers: []raft.Server{{ID: raft.ServerID(cfg.ID), Address: localAddr}}}
-		seen := map[raft.ServerID]struct{}{raft.ServerID(cfg.ID): {}}
+		configuration := raft.Configuration{}
+		seen := map[raft.ServerID]struct{}{}
 		for _, peer := range cfg.Peers {
 			id := raft.ServerID(peer.ID)
 			if _, ok := seen[id]; ok {
@@ -334,6 +333,46 @@ func (n *Node) TransferLeadershipTo(id, address string) error {
 	}
 	future := n.raft.LeadershipTransferToServer(raft.ServerID(id), raft.ServerAddress(address))
 	return future.Error()
+}
+
+// UpdatePeer ensures the raft configuration advertises the provided address for the peer id.
+func (n *Node) UpdatePeer(id, address string) error {
+	if id == "" || address == "" {
+		return errors.New("raft: update peer requires id and address")
+	}
+	if err := n.ensureLeader(); err != nil {
+		return err
+	}
+
+	serverID := raft.ServerID(id)
+
+	confFuture := n.raft.GetConfiguration()
+	if err := confFuture.Error(); err != nil {
+		return fmt.Errorf("raft: get configuration: %w", err)
+	}
+
+	config := confFuture.Configuration()
+	for _, srv := range config.Servers {
+		if srv.ID != serverID {
+			continue
+		}
+		if string(srv.Address) == address {
+			return nil
+		}
+
+		removeFuture := n.raft.RemoveServer(serverID, 0, n.autoTimeout)
+		if err := removeFuture.Error(); err != nil {
+			return fmt.Errorf("raft: remove server %s: %w", id, err)
+		}
+		break
+	}
+
+	addFuture := n.raft.AddVoter(serverID, raft.ServerAddress(address), 0, n.autoTimeout)
+	if err := addFuture.Error(); err != nil {
+		return fmt.Errorf("raft: add voter %s: %w", id, err)
+	}
+
+	return nil
 }
 
 func (n *Node) ensureLeader() error {

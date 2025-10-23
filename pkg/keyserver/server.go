@@ -20,7 +20,7 @@ import (
 )
 
 // Server dials a CometBFT validator and answers privval signing requests
-// whenever this Keystone node holds the active lease.
+// whenever this CometKMS node holds the active lease.
 type Server struct {
 	g      *errgroup.Group
 	cfg    Config
