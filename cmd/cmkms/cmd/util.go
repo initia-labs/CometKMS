@@ -58,6 +58,26 @@ func sliceOption(cmd *cobra.Command, flagName, envKey string, cfgValue []string)
 	return cfgValue
 }
 
+// boolOption resolves boolean options following the standard priority order.
+func boolOption(cmd *cobra.Command, flagName, envKey string, cfgValue, fallback bool) bool {
+	if cmd.Flags().Changed(flagName) {
+		val, _ := cmd.Flags().GetBool(flagName)
+		return val
+	}
+	if envVal := strings.TrimSpace(os.Getenv(envKey)); envVal != "" {
+		switch strings.ToLower(envVal) {
+		case "1", "true", "yes", "on":
+			return true
+		case "0", "false", "no", "off":
+			return false
+		}
+	}
+	if cfgValue {
+		return true
+	}
+	return fallback
+}
+
 // parsePeers converts id=host:port definitions into raft peers.
 func parsePeers(entries []string) ([]raftnode.Peer, error) {
 	peers := make([]raftnode.Peer, 0, len(entries))

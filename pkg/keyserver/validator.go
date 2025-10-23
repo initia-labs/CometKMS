@@ -13,7 +13,7 @@ import (
 )
 
 // PrivValidator wraps a PrivValidator and blocks signing operations until
-// the Keystone lease is active.
+// the CometKMS lease is active.
 type PrivValidator struct {
 	inner *privval.FilePV
 	node  *raftnode.Node
@@ -21,7 +21,7 @@ type PrivValidator struct {
 }
 
 // NewPrivValidator returns a validator that defers to inner once the
-// Keystone lease is available.
+// CometKMS lease is available.
 func NewPrivValidator(inner *privval.FilePV, node *raftnode.Node) *PrivValidator {
 	return &PrivValidator{inner: inner, node: node}
 }

@@ -70,6 +70,38 @@ func TestSliceOptionPriority(t *testing.T) {
 	}
 }
 
+func TestBoolOptionPriority(t *testing.T) {
+	cmd := &cobra.Command{Use: "test"}
+	cmd.Flags().Bool("unsafe", false, "")
+	cmd.Flags().Set("unsafe", "true")
+	t.Setenv("BOOL_ENV", "false")
+
+	if got := boolOption(cmd, "unsafe", "BOOL_ENV", false, false); !got {
+		t.Fatalf("expected flag bool to win")
+	}
+
+	cmd = &cobra.Command{Use: "test"}
+	cmd.Flags().Bool("unsafe", false, "")
+	t.Setenv("BOOL_ENV", "true")
+	if got := boolOption(cmd, "unsafe", "BOOL_ENV", false, false); !got {
+		t.Fatalf("expected env bool to win")
+	}
+
+	t.Setenv("BOOL_ENV", "false")
+	if got := boolOption(cmd, "unsafe", "BOOL_ENV", true, false); got {
+		t.Fatalf("expected env to trump config and set false")
+	}
+
+	t.Setenv("BOOL_ENV", "")
+	if got := boolOption(cmd, "unsafe", "BOOL_ENV", true, false); !got {
+		t.Fatalf("expected config bool to win")
+	}
+
+	if got := boolOption(cmd, "unsafe", "BOOL_ENV", false, true); !got {
+		t.Fatalf("expected fallback when nothing else set")
+	}
+}
+
 func TestParsePeersAndEnsureSelf(t *testing.T) {
 	peers, err := parsePeers([]string{"node-1=127.0.0.1:1234"})
 	if err != nil {

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/initia-labs/CometKMS/pkg/fsm"
+	"github.com/initia-labs/CometKMS/pkg/raft"
 )
 
 // LeasingNode exposes the minimal state used by the HTTP server.
@@ -17,21 +19,28 @@ type LeasingNode interface {
 	GetLastSignState() *fsm.LastSignState
 	LeaderInfo() (addr string, id string)
 	IsLeader() bool
+	UpdatePeer(id, address string) error
 }
 
-// Server exposes the Keystone HTTP status API.
+// Server exposes the CometKMS HTTP status API.
 type Server struct {
-	node   LeasingNode
-	addr   string
-	logger cometlog.Logger
+	node        LeasingNode
+	addr        string
+	logger      cometlog.Logger
+	allowUnsafe bool
 }
 
 // NewServer constructs an API server bound to addr.
-func NewServer(node LeasingNode, addr string, logger cometlog.Logger) *Server {
+func NewServer(node LeasingNode, addr string, logger cometlog.Logger, allowUnsafe bool) *Server {
 	if logger == nil {
 		logger = cometlog.NewNopLogger()
 	}
-	return &Server{node: node, addr: addr, logger: logger}
+	return &Server{
+		node:        node,
+		addr:        addr,
+		logger:      logger,
+		allowUnsafe: allowUnsafe,
+	}
 }
 
 // ListenAndServe runs the HTTP server until context cancellation.
@@ -62,6 +71,9 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/status", s.handleStatus)
+	if s.allowUnsafe {
+		mux.HandleFunc("/raft/peer", s.handleUpdatePeer)
+	}
 	return mux
 }
 
@@ -86,6 +98,61 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		s.logger.Error("failed to write http response", "err", err)
 	}
+}
+
+type updatePeerRequest struct {
+	ID      string `json:"id"`
+	Address string `json:"address"`
+}
+
+type errorResponse struct {
+	Error      string `json:"error"`
+	LeaderID   string `json:"leader_id,omitempty"`
+	LeaderAddr string `json:"leader_addr,omitempty"`
+}
+
+func (s *Server) handleUpdatePeer(w http.ResponseWriter, r *http.Request) {
+	if !s.allowUnsafe {
+		http.NotFound(w, r)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	defer r.Body.Close()
+
+	var req updatePeerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+	if req.ID == "" || req.Address == "" {
+		http.Error(w, "id and address are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.node.UpdatePeer(req.ID, req.Address); err != nil {
+		var notLeader *raft.NotLeaderError
+		if errors.As(err, &notLeader) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(errorResponse{
+				Error:      err.Error(),
+				LeaderID:   notLeader.LeaderID,
+				LeaderAddr: notLeader.LeaderAdr,
+			})
+			return
+		}
+
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // StatusResponse describes the current lease state.

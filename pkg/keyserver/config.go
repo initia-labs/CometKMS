@@ -21,7 +21,7 @@ type Config struct {
 	// PrivStatePath stores the last sign state (priv_validator_state.json).
 	PrivStatePath string
 
-	// SignerID is used when acquiring the Keystone lease. Defaults to the node
+	// SignerID is used when acquiring the CometKMS lease. Defaults to the node
 	// identifier when left empty.
 	SignerID string
 }
