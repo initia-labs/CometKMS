@@ -94,64 +94,6 @@ func readConfig(path string) (configFile, error) {
 	return cfg, nil
 }
 
-func parseKV(line string) (string, string, bool) {
-	eq := strings.Index(line, "=")
-	if eq == -1 {
-		return "", "", false
-	}
-	key := strings.TrimSpace(line[:eq])
-	value := strings.TrimSpace(line[eq+1:])
-	value = trimQuotes(value)
-	return key, value, true
-}
-
-// parseArray handles TOML-like string arrays such as ["foo", "bar"].
-func parseArray(raw string) []string {
-	raw = strings.TrimSpace(raw)
-	if !strings.HasPrefix(raw, "[") || !strings.HasSuffix(raw, "]") {
-		return nil
-	}
-	raw = strings.TrimPrefix(raw, "[")
-	raw = strings.TrimSuffix(raw, "]")
-	if strings.TrimSpace(raw) == "" {
-		return []string{}
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = trimQuotes(strings.TrimSpace(part))
-		if part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
-}
-
-// parseValidatorAddrs accepts either a single address or an array syntax.
-func parseValidatorAddrs(value string) []string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-		if addrs := parseArray(trimmed); addrs != nil {
-			return addrs
-		}
-		return []string{}
-	}
-	return []string{trimmed}
-}
-
-func trimQuotes(val string) string {
-	if len(val) >= 2 {
-		if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) ||
-			(strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
-			return val[1 : len(val)-1]
-		}
-	}
-	return val
-}
-
 // writeDefaultConfig writes the scaffold config file if it does not yet exist.
 func writeDefaultConfig(path string) error {
 	content := `# Keystone configuration

@@ -8,70 +8,6 @@ import (
 	"testing"
 )
 
-func TestParseArray(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name     string
-		input    string
-		expected []string
-	}{
-		{"empty", "[]", []string{}},
-		{"simple", "[\"a\", \"b\"]", []string{"a", "b"}},
-		{"whitespace", "[ 'x' , \"y\" ]", []string{"x", "y"}},
-		{"invalid", "not-an-array", nil},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := parseArray(tc.input); !slicesEqual(got, tc.expected) {
-				t.Fatalf("parseArray(%q) = %v, want %v", tc.input, got, tc.expected)
-			}
-		})
-	}
-}
-
-func TestParseValidatorAddrs(t *testing.T) {
-	t.Parallel()
-	if got := parseValidatorAddrs("tcp://127.0.0.1:1234"); !slicesEqual(got, []string{"tcp://127.0.0.1:1234"}) {
-		t.Fatalf("expected single address, got %v", got)
-	}
-
-	if got := parseValidatorAddrs("[\"tcp://a\", \"tcp://b\"]"); !slicesEqual(got, []string{"tcp://a", "tcp://b"}) {
-		t.Fatalf("expected array parse, got %v", got)
-	}
-
-	if got := parseValidatorAddrs(" "); got != nil {
-		t.Fatalf("expected nil for blank input, got %v", got)
-	}
-}
-
-func TestTrimQuotes(t *testing.T) {
-	t.Parallel()
-	if got := trimQuotes("\"quoted\""); got != "quoted" {
-		t.Fatalf("expected \"quoted\", got %q", got)
-	}
-	if got := trimQuotes("'single'"); got != "single" {
-		t.Fatalf("expected 'single', got %q", got)
-	}
-	if got := trimQuotes("plain"); got != "plain" {
-		t.Fatalf("expected plain unchanged, got %q", got)
-	}
-}
-
-func TestParseKV(t *testing.T) {
-	t.Parallel()
-	key, val, ok := parseKV(" log_level = \"info\" ")
-	if !ok {
-		t.Fatal("expected parseKV to succeed")
-	}
-	if key != "log_level" || val != "info" {
-		t.Fatalf("unexpected kv: %q=%q", key, val)
-	}
-	if _, _, ok := parseKV("no equals"); ok {
-		t.Fatal("expected parseKV to fail without equals sign")
-	}
-}
-
 func TestReadConfigParsesValues(t *testing.T) {
 	oldOutput := log.Writer()
 	log.SetOutput(io.Discard)
@@ -82,7 +18,7 @@ func TestReadConfigParsesValues(t *testing.T) {
 raft_addr = "127.0.0.1:1000"
 http_addr = "0.0.0.0:9000"
 peer = ["a", "b"]
-validator_addr = "tcp://validator"
+validator_addr = ["tcp://validator"]
 chain_id = "chain"
 log_level = "verbose"
 log_format = "fancy"
