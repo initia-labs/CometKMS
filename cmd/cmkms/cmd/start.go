@@ -39,6 +39,7 @@ func init() {
 	cmd.Flags().String("chain-id", "", "cometbft chain id")
 	cmd.Flags().String("log-level", "info", "log level: debug, info, error")
 	cmd.Flags().String("log-format", "plain", "log format: json or plain")
+	cmd.Flags().Bool("allow-unsafe", false, "enable unsafe endpoints (e.g. /raft/peer)")
 	rootCmd.AddCommand(cmd)
 }
 
@@ -53,6 +54,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	chainID := stringOption(cmd, "chain-id", "COMETKMS_CHAIN_ID", cfg.ChainID, "")
 	logLevel := stringOption(cmd, "log-level", "COMETKMS_LOG_LEVEL", cfg.LogLevel, "info")
 	logFormat := stringOption(cmd, "log-format", "COMETKMS_LOG_FORMAT", cfg.LogFormat, "plain")
+	allowUnsafe := boolOption(cmd, "allow-unsafe", "COMETKMS_ALLOW_UNSAFE", cfg.AllowUnsafe, false)
 
 	if nodeID == "" {
 		return fmt.Errorf("node id is required")
@@ -103,7 +105,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	srv := api.NewServer(node, httpAddr, logger.With("component", "api"))
+	srv := api.NewServer(node, httpAddr, logger.With("component", "api"), allowUnsafe)
 	if err := srv.ListenAndServe(ctx, g); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil

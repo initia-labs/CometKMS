@@ -29,6 +29,7 @@ Edit `~/.cmkms/config.toml` (or supply flags/env vars) to point at your validato
 # ~/.cmkms/config.toml
 validator_addr = ["tcp://127.0.0.1:8080"]
 chain_id = "your-chain-id"
+# allow_unsafe = true # optional: exposes /raft/peer for manual peer updates
 ```
 
 Place `priv_validator_key.json` and `priv_validator_state.json` in `$HOME/.cmkms/priv/` (or the `--home` directory you choose). You can override the home directory with `--home` when running multiple instances on the same host. Configure all Raft peers (including the local node) via the `peer` array in `config.toml` or `--peer id=host:port` flags.

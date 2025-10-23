@@ -19,6 +19,7 @@ type configFile struct {
 	ChainID        string   `toml:"chain_id"`
 	LogLevel       string   `toml:"log_level"`
 	LogFormat      string   `toml:"log_format"`
+	AllowUnsafe    bool     `toml:"allow_unsafe"`
 }
 
 // ensureConfig prepares the home directory, ensures a config file exists, and
@@ -125,6 +126,9 @@ log_level = "info"
 
 # Log format: json or plain
 log_format = "plain"
+
+# Enable experimental or operationally unsafe APIs (such as /raft/peer).
+allow_unsafe = false
 `
 	if _, err := os.Stat(path); err == nil {
 		return nil

@@ -24,17 +24,23 @@ type LeasingNode interface {
 
 // Server exposes the CometKMS HTTP status API.
 type Server struct {
-	node   LeasingNode
-	addr   string
-	logger cometlog.Logger
+	node        LeasingNode
+	addr        string
+	logger      cometlog.Logger
+	allowUnsafe bool
 }
 
 // NewServer constructs an API server bound to addr.
-func NewServer(node LeasingNode, addr string, logger cometlog.Logger) *Server {
+func NewServer(node LeasingNode, addr string, logger cometlog.Logger, allowUnsafe bool) *Server {
 	if logger == nil {
 		logger = cometlog.NewNopLogger()
 	}
-	return &Server{node: node, addr: addr, logger: logger}
+	return &Server{
+		node:        node,
+		addr:        addr,
+		logger:      logger,
+		allowUnsafe: allowUnsafe,
+	}
 }
 
 // ListenAndServe runs the HTTP server until context cancellation.
@@ -65,7 +71,9 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/status", s.handleStatus)
-	mux.HandleFunc("/raft/peer", s.handleUpdatePeer)
+	if s.allowUnsafe {
+		mux.HandleFunc("/raft/peer", s.handleUpdatePeer)
+	}
 	return mux
 }
 
@@ -104,6 +112,11 @@ type errorResponse struct {
 }
 
 func (s *Server) handleUpdatePeer(w http.ResponseWriter, r *http.Request) {
+	if !s.allowUnsafe {
+		http.NotFound(w, r)
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

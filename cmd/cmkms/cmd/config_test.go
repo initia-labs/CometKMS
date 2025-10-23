@@ -22,6 +22,7 @@ validator_addr = ["tcp://validator"]
 chain_id = "chain"
 log_level = "verbose"
 log_format = "fancy"
+allow_unsafe = true
 `
 	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -48,6 +49,9 @@ log_format = "fancy"
 	}
 	if cfg.LogFormat != "plain" {
 		t.Fatalf("invalid format should default to plain, got %q", cfg.LogFormat)
+	}
+	if !cfg.AllowUnsafe {
+		t.Fatalf("expected allow_unsafe to be true")
 	}
 }
 
@@ -87,6 +91,9 @@ func TestEnsureConfigCreatesDefaults(t *testing.T) {
 	}
 	if !slicesEqual(fileCfg.ValidatorAddrs, []string{"tcp://127.0.0.1:8080"}) {
 		t.Fatalf("unexpected default validator addrs: %v", fileCfg.ValidatorAddrs)
+	}
+	if fileCfg.AllowUnsafe {
+		t.Fatal("allow_unsafe should default to false")
 	}
 }
 

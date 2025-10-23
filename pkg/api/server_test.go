@@ -31,7 +31,7 @@ func (s *stubLeasingNode) UpdatePeer(id, address string) error {
 
 func TestHandleUpdatePeer_Success(t *testing.T) {
 	node := &stubLeasingNode{}
-	server := NewServer(node, ":0", nil)
+	server := NewServer(node, ":0", nil, true)
 
 	req := httptest.NewRequest(http.MethodPost, "/raft/peer", bytes.NewBufferString(`{"id":"node-0","address":"host:9430"}`))
 	rec := httptest.NewRecorder()
@@ -54,7 +54,7 @@ func TestHandleUpdatePeer_NotLeader(t *testing.T) {
 	node := &stubLeasingNode{
 		updateErr: &raft.NotLeaderError{LeaderID: "node-1", LeaderAdr: "host:9430"},
 	}
-	server := NewServer(node, ":0", nil)
+	server := NewServer(node, ":0", nil, true)
 
 	req := httptest.NewRequest(http.MethodPost, "/raft/peer", bytes.NewBufferString(`{"id":"node-0","address":"host:9430"}`))
 	rec := httptest.NewRecorder()
@@ -71,7 +71,7 @@ func TestHandleUpdatePeer_NotLeader(t *testing.T) {
 
 func TestHandleUpdatePeer_MethodNotAllowed(t *testing.T) {
 	node := &stubLeasingNode{}
-	server := NewServer(node, ":0", nil)
+	server := NewServer(node, ":0", nil, true)
 
 	req := httptest.NewRequest(http.MethodGet, "/raft/peer", nil)
 	rec := httptest.NewRecorder()
@@ -85,7 +85,7 @@ func TestHandleUpdatePeer_MethodNotAllowed(t *testing.T) {
 
 func TestHandleUpdatePeer_BadRequest(t *testing.T) {
 	node := &stubLeasingNode{}
-	server := NewServer(node, ":0", nil)
+	server := NewServer(node, ":0", nil, true)
 
 	tests := []struct {
 		name string
@@ -111,7 +111,7 @@ func TestHandleUpdatePeer_BadRequest(t *testing.T) {
 
 func TestHandleUpdatePeer_InternalError(t *testing.T) {
 	node := &stubLeasingNode{updateErr: errors.New("boom")}
-	server := NewServer(node, ":0", nil)
+	server := NewServer(node, ":0", nil, true)
 
 	req := httptest.NewRequest(http.MethodPost, "/raft/peer", bytes.NewBufferString(`{"id":"node-0","address":"host:9430"}`))
 	rec := httptest.NewRecorder()
@@ -120,5 +120,22 @@ func TestHandleUpdatePeer_InternalError(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
+	}
+}
+
+func TestHandleUpdatePeer_Disabled(t *testing.T) {
+	node := &stubLeasingNode{}
+	server := NewServer(node, ":0", nil, false)
+
+	req := httptest.NewRequest(http.MethodPost, "/raft/peer", bytes.NewBufferString(`{"id":"node-0","address":"host:9430"}`))
+	rec := httptest.NewRecorder()
+
+	server.handleUpdatePeer(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d when endpoint disabled, got %d", http.StatusNotFound, rec.Code)
+	}
+	if len(node.calls) != 0 {
+		t.Fatalf("expected no update calls when disabled, got %d", len(node.calls))
 	}
 }
