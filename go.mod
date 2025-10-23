@@ -3,6 +3,7 @@ module github.com/initia-labs/CometKMS
 go 1.24.3
 
 require (
+	github.com/BurntSushi/toml v1.5.0
 	github.com/cometbft/cometbft v0.38.18
 	github.com/hashicorp/go-hclog v1.6.2
 	github.com/hashicorp/raft v1.7.3

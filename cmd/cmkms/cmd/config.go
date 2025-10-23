@@ -1,25 +1,24 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	cometlog "github.com/cometbft/cometbft/libs/log"
 )
 
 type configFile struct {
-	ID             string
-	RaftAddr       string
-	HTTPAddr       string
-	Peer           []string
-	ValidatorAddrs []string
-	ChainID        string
-	LogLevel       string
-	LogFormat      string
+	ID             string   `toml:"id"`
+	RaftAddr       string   `toml:"raft_addr"`
+	HTTPAddr       string   `toml:"http_addr"`
+	Peer           []string `toml:"peer"`
+	ValidatorAddrs []string `toml:"validator_addr"`
+	ChainID        string   `toml:"chain_id"`
+	LogLevel       string   `toml:"log_level"`
+	LogFormat      string   `toml:"log_format"`
 }
 
 // ensureConfig prepares the home directory, ensures a config file exists, and
@@ -65,119 +64,34 @@ var validLogFormats = map[string]struct{}{
 
 // readConfig consumes a simplified TOML document into a configFile struct.
 func readConfig(path string) (configFile, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return configFile{}, err
+	var cfg configFile
+
+	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+		return configFile{}, fmt.Errorf("failed to decode TOML: %w", err)
 	}
-	defer file.Close()
 
-	cfg := configFile{}
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
+	// Validate log level
+	if cfg.LogLevel != "" {
+		if _, ok := validLogLevels[cfg.LogLevel]; !ok {
+			fmt.Printf("warning: unknown log level %q, defaulting to info\n", cfg.LogLevel)
+			cfg.LogLevel = "info"
 		}
-
-		key, value, ok := parseKV(line)
-		if !ok {
-			continue
-		}
-
-		switch key {
-		case "id":
-			cfg.ID = value
-		case "raft_addr":
-			cfg.RaftAddr = value
-		case "http_addr":
-			cfg.HTTPAddr = value
-		case "peer":
-			cfg.Peer = parseArray(value)
-		case "validator_addr":
-			cfg.ValidatorAddrs = parseValidatorAddrs(value)
-		case "chain_id":
-			cfg.ChainID = value
-		case "log_level":
-			cfg.LogLevel = value
-			cometlog.AllowLevel(value)
-			if _, ok := validLogLevels[strings.ToLower(value)]; !ok {
-				log.Printf("warning: unknown log level %q, defaulting to info", value)
-				cfg.LogLevel = "info"
-			}
-		case "log_format":
-			cfg.LogFormat = value
-			if _, ok := validLogFormats[strings.ToLower(value)]; !ok {
-				log.Printf("warning: unknown log format %q, defaulting to plain", value)
-				cfg.LogFormat = "plain"
-			}
-		default:
-			// ignore unknown keys
+		// Validate with CometBFT logger
+		if _, err := cometlog.AllowLevel(cfg.LogLevel); err != nil {
+			fmt.Printf("warning: invalid log level %q, defaulting to info\n", cfg.LogLevel)
+			cfg.LogLevel = "info"
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return configFile{}, err
+	// Validate log format
+	if cfg.LogFormat != "" {
+		if _, ok := validLogFormats[cfg.LogFormat]; !ok {
+			fmt.Printf("warning: unknown log format %q, defaulting to plain\n", cfg.LogFormat)
+			cfg.LogFormat = "plain"
+		}
 	}
 
 	return cfg, nil
-}
-
-func parseKV(line string) (string, string, bool) {
-	eq := strings.Index(line, "=")
-	if eq == -1 {
-		return "", "", false
-	}
-	key := strings.TrimSpace(line[:eq])
-	value := strings.TrimSpace(line[eq+1:])
-	value = trimQuotes(value)
-	return key, value, true
-}
-
-// parseArray handles TOML-like string arrays such as ["foo", "bar"].
-func parseArray(raw string) []string {
-	raw = strings.TrimSpace(raw)
-	if !strings.HasPrefix(raw, "[") || !strings.HasSuffix(raw, "]") {
-		return nil
-	}
-	raw = strings.TrimPrefix(raw, "[")
-	raw = strings.TrimSuffix(raw, "]")
-	if strings.TrimSpace(raw) == "" {
-		return []string{}
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = trimQuotes(strings.TrimSpace(part))
-		if part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
-}
-
-// parseValidatorAddrs accepts either a single address or an array syntax.
-func parseValidatorAddrs(value string) []string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-		if addrs := parseArray(trimmed); addrs != nil {
-			return addrs
-		}
-		return []string{}
-	}
-	return []string{trimmed}
-}
-
-func trimQuotes(val string) string {
-	if len(val) >= 2 {
-		if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) ||
-			(strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
-			return val[1 : len(val)-1]
-		}
-	}
-	return val
 }
 
 // writeDefaultConfig writes the scaffold config file if it does not yet exist.
