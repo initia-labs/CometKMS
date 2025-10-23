@@ -121,3 +121,60 @@ func TestLastSignStateEqualHRS(t *testing.T) {
 		t.Fatal("expected non-nil vs nil to be unequal")
 	}
 }
+
+func TestLastSignStateEqualFullComparison(t *testing.T) {
+	base := &LastSignState{
+		Height:    9,
+		Round:     1,
+		Step:      2,
+		Signature: []byte{1, 2, 3},
+		SignBytes: []byte{4, 5, 6},
+	}
+
+	if !base.Equal(&LastSignState{
+		Height:    9,
+		Round:     1,
+		Step:      2,
+		Signature: []byte{1, 2, 3},
+		SignBytes: []byte{4, 5, 6},
+	}) {
+		t.Fatal("expected identical sign states to be equal")
+	}
+
+	if base.Equal(&LastSignState{
+		Height:    9,
+		Round:     1,
+		Step:      2,
+		Signature: []byte{1, 2, 3},
+		SignBytes: []byte{9, 5, 6},
+	}) {
+		t.Fatal("expected differing sign bytes to be unequal")
+	}
+
+	if base.Equal(&LastSignState{
+		Height:    9,
+		Round:     1,
+		Step:      2,
+		Signature: []byte{0, 2, 3},
+		SignBytes: []byte{4, 5, 6},
+	}) {
+		t.Fatal("expected differing signatures to be unequal")
+	}
+
+	if base.Equal(&LastSignState{
+		Height:    9,
+		Round:     2,
+		Step:      2,
+		Signature: []byte{1, 2, 3},
+		SignBytes: []byte{4, 5, 6},
+	}) {
+		t.Fatal("expected differing HRS to be unequal")
+	}
+
+	if !(*LastSignState)(nil).Equal(nil) {
+		t.Fatal("expected nil comparisons to be equal")
+	}
+	if base.Equal(nil) || (*LastSignState)(nil).Equal(base) {
+		t.Fatal("expected non-nil vs nil to be unequal")
+	}
+}

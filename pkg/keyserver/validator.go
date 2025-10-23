@@ -81,7 +81,7 @@ func (l *PrivValidator) SignProposal(chainID string, proposal *cmtproto.Proposal
 func (l *PrivValidator) syncLastSignState() error {
 	l.mu.Lock()
 	lastSignState := fsm.FromFilePV(&l.inner.LastSignState)
-	if lastSignState.EqualHRS(l.node.GetLastSignState()) {
+	if lastSignState.Equal(l.node.GetLastSignState()) {
 		l.mu.Unlock()
 		return nil
 	}
