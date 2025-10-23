@@ -47,6 +47,7 @@ func (v *validatorEndpoint) start(ctx context.Context, g *errgroup.Group) error 
 
 	endpoint := edp.NewSignerDialerEndpoint(v.logger, v.dialer)
 	signer := edp.NewSignerServer(ctx, g, endpoint, v.chainID, v.pv)
+	signer.SetRequestHandler(edp.ValidationRequestHandler)
 
 	if err := endpoint.Start(); err != nil {
 		endpoint.Stop()
