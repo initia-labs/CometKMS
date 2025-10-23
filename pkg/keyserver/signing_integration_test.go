@@ -666,10 +666,7 @@ func isTemporarySignError(err error) bool {
 	}
 	var remoteErr *privval.RemoteSignerError
 	if errors.As(err, &remoteErr) {
-		if strings.Contains(remoteErr.Description, "lease unavailable") {
-			return true
-		}
-		return false
+		return strings.Contains(remoteErr.Description, "raft error")
 	}
 	return true
 }

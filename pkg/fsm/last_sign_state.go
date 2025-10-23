@@ -1,6 +1,8 @@
 package fsm
 
 import (
+	"bytes"
+
 	cmtbytes "github.com/cometbft/cometbft/libs/bytes"
 	"github.com/cometbft/cometbft/privval"
 )
@@ -84,4 +86,23 @@ func (s *LastSignState) EqualHRS(other *LastSignState) bool {
 	}
 
 	return s.Height == other.Height && s.Round == other.Round && s.Step == other.Step
+}
+
+// Equal reports whether s and other have identical HRS and signing payload.
+func (s *LastSignState) Equal(other *LastSignState) bool {
+	if s == nil && other == nil {
+		return true
+	} else if s == nil || other == nil {
+		return false
+	}
+
+	if !s.EqualHRS(other) {
+		return false
+	}
+
+	if !bytes.Equal(s.Signature, other.Signature) {
+		return false
+	}
+
+	return bytes.Equal(s.SignBytes, other.SignBytes)
 }
