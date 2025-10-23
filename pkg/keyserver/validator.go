@@ -30,12 +30,20 @@ func (l *PrivValidator) GetPubKey() (crypto.PubKey, error) {
 	return l.inner.GetPubKey()
 }
 
+// wrapRaftError wraps an error with "raft error" prefix if non-nil.
+func wrapRaftError(err error) error {
+	if err != nil {
+		return fmt.Errorf("raft error: %w", err)
+	}
+	return nil
+}
+
 func (l *PrivValidator) SignVote(chainID string, vote *cmtproto.Vote) error {
 	if err := l.node.VerifyLeader(); err != nil {
-		return fmt.Errorf("lease unavailable: %w", err)
+		return wrapRaftError(err)
 	}
 	if err := l.syncLastSignState(); err != nil {
-		return err
+		return wrapRaftError(err)
 	}
 	l.mu.Lock()
 	err := l.inner.SignVote(chainID, vote)
@@ -43,15 +51,18 @@ func (l *PrivValidator) SignVote(chainID string, vote *cmtproto.Vote) error {
 	if err != nil {
 		return err
 	}
-	return l.syncLastSignState()
+	if err := l.syncLastSignState(); err != nil {
+		return wrapRaftError(err)
+	}
+	return nil
 }
 
 func (l *PrivValidator) SignProposal(chainID string, proposal *cmtproto.Proposal) error {
 	if err := l.node.VerifyLeader(); err != nil {
-		return fmt.Errorf("lease unavailable: %w", err)
+		return wrapRaftError(err)
 	}
 	if err := l.syncLastSignState(); err != nil {
-		return err
+		return wrapRaftError(err)
 	}
 	l.mu.Lock()
 	err := l.inner.SignProposal(chainID, proposal)
@@ -59,7 +70,10 @@ func (l *PrivValidator) SignProposal(chainID string, proposal *cmtproto.Proposal
 	if err != nil {
 		return err
 	}
-	return l.syncLastSignState()
+	if err := l.syncLastSignState(); err != nil {
+		return wrapRaftError(err)
+	}
+	return nil
 }
 
 // syncLastSignState pushes the latest sign state through Raft and refreshes the

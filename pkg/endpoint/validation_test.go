@@ -13,7 +13,8 @@ func TestPrivValProtoMessage(t *testing.T) {
 	_, ok := m.GetSum().(*privvalproto.Message_SignedProposalResponse)
 	require.False(t, ok)
 
-	m.Sum = &privvalproto.Message_SignedProposalResponse{SignedProposalResponse: &privvalproto.SignedProposalResponse{}}
-	_, ok = m.GetSum().(*privvalproto.Message_SignedProposalResponse)
+	m.Sum = &privvalproto.Message_SignedProposalResponse{SignedProposalResponse: nil}
+	x, ok := m.GetSum().(*privvalproto.Message_SignedProposalResponse)
 	require.True(t, ok)
+	require.Nil(t, x.SignedProposalResponse)
 }

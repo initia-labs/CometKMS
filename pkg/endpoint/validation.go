@@ -56,8 +56,8 @@ func ValidationRequestHandler(
 		vote := r.SignVoteRequest.Vote
 
 		err = privVal.SignVote(chainID, vote)
-		if err != nil && strings.Contains(err.Error(), "lease unavailable") {
-			res = privvalproto.Message{}
+		if err != nil && strings.Contains(err.Error(), "raft error") {
+			res = privvalproto.Message{Sum: &privvalproto.Message_SignedVoteResponse{SignedVoteResponse: nil}}
 		} else if err != nil {
 			res = mustWrapMsg(&privvalproto.SignedVoteResponse{
 				Vote: cmtproto.Vote{}, Error: &privvalproto.RemoteSignerError{Code: 0, Description: err.Error()}})
@@ -77,8 +77,8 @@ func ValidationRequestHandler(
 		proposal := r.SignProposalRequest.Proposal
 
 		err = privVal.SignProposal(chainID, proposal)
-		if err != nil && strings.Contains(err.Error(), "lease unavailable") {
-			res = privvalproto.Message{}
+		if err != nil && strings.Contains(err.Error(), "raft error") {
+			res = privvalproto.Message{Sum: &privvalproto.Message_SignedProposalResponse{SignedProposalResponse: nil}}
 		} else if err != nil {
 			res = mustWrapMsg(&privvalproto.SignedProposalResponse{
 				Proposal: cmtproto.Proposal{}, Error: &privvalproto.RemoteSignerError{Code: 0, Description: err.Error()}})
