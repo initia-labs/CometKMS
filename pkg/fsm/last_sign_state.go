@@ -32,7 +32,13 @@ func (s *LastSignState) CopyToFilePV(pv *privval.FilePVLastSignState) {
 	if pv == nil {
 		return
 	}
-
+	if s.Less(&LastSignState{
+		Height: pv.Height,
+		Round:  pv.Round,
+		Step:   pv.Step,
+	}) {
+		return
+	}
 	pv.Height = s.Height
 	pv.Round = s.Round
 	pv.Step = s.Step
