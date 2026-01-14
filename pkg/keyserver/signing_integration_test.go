@@ -426,6 +426,103 @@ func TestKeyserverMultipleValidatorsRejectConflictingVotes(t *testing.T) {
 	}
 }
 
+func TestKeyserverRejectsConflictingVotesAtSameHeight(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	peers := makeTestPeers(t, 3)
+	cluster := startRaftCluster(t, ctx, peers)
+	t.Cleanup(func() {
+		for _, node := range cluster {
+			closeClusterNode(t, node)
+		}
+	})
+
+	baseKeyDir := t.TempDir()
+	baseKeyPath := filepath.Join(baseKeyDir, "priv_key.json")
+	baseStatePath := filepath.Join(baseKeyDir, "priv_state.json")
+	basePV := privval.GenFilePV(baseKeyPath, baseStatePath)
+	basePV.Save()
+
+	validatorAddrA, endpointA, signerA := startValidator(t, testChainID)
+	validatorAddrB, endpointB, signerB := startValidator(t, testChainID)
+	t.Cleanup(func() {
+		if err := signerA.Close(); err != nil {
+			t.Logf("signer A close: %v", err)
+		}
+		if err := signerB.Close(); err != nil {
+			t.Logf("signer B close: %v", err)
+		}
+		endpointA.Stop()
+		endpointB.Stop()
+	})
+
+	startKeyservers(t, ctx, cluster, baseKeyPath, baseStatePath, []string{validatorAddrA, validatorAddrB}, testChainID)
+
+	_ = waitForLeaderNode(t, cluster, 10*time.Second)
+	waitForValidatorConnection(t, signerA, 10*time.Second)
+	waitForValidatorConnection(t, signerB, 10*time.Second)
+
+	validatorAddress := ed25519.GenPrivKey().PubKey().Address().Bytes()
+	height := int64(40)
+
+	conflictA := makeVote(height, 0x33, validatorAddress)
+	conflictB := makeVote(height, 0x44, validatorAddress)
+
+	var hookCount atomic.Int32
+	syncLastSignStateHook = func(point string, state *fsm.LastSignState) {
+		if point == "before-write" {
+			if res := hookCount.Add(1); res == 1 {
+				time.Sleep(time.Second)
+			}
+		}
+	}
+	t.Cleanup(func() {
+		syncLastSignStateHook = nil
+	})
+
+	results := make(chan error, 2)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		<-start
+		attempt := cloneVote(conflictA)
+		results <- signerA.SignVote(testChainID, attempt)
+	}()
+
+	go func() {
+		defer wg.Done()
+		<-start
+		attempt := cloneVote(conflictB)
+		results <- signerB.SignVote(testChainID, attempt)
+	}()
+
+	close(start)
+
+	wg.Wait()
+	close(results)
+
+	errCount := 0
+	for res := range results {
+		if res != nil {
+			var remoteErr *privval.RemoteSignerError
+			if !errors.As(res, &remoteErr) {
+				t.Fatalf("expected remote signer error, got %v", res)
+			}
+			if !strings.Contains(remoteErr.Description, "conflicting") {
+				t.Fatalf("unexpected error: %v", remoteErr)
+			}
+			errCount++
+		}
+	}
+	if errCount == 0 {
+		t.Fatal("expected at least one conflicting signature to fail")
+	}
+}
+
 func startKeyservers(t *testing.T, ctx context.Context, cluster []*clusterNode, baseKeyPath, baseStatePath string, validatorAddrs []string, chainID string) {
 	t.Helper()
 

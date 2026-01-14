@@ -20,6 +20,10 @@ type PrivValidator struct {
 	mu    sync.Mutex
 }
 
+// syncLastSignStateHook is for tests to coordinate interleavings.
+// It should be nil in production.
+var syncLastSignStateHook func(point string, state *fsm.LastSignState)
+
 // NewPrivValidator returns a validator that defers to inner once the
 // CometKMS lease is available.
 func NewPrivValidator(inner *privval.FilePV, node *raftnode.Node) *PrivValidator {
@@ -80,21 +84,27 @@ func (l *PrivValidator) SignProposal(chainID string, proposal *cmtproto.Proposal
 // on-disk priv-validator state so leadership changes cannot re-sign old blocks.
 func (l *PrivValidator) syncLastSignState() error {
 	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	lastSignState := fsm.FromFilePV(&l.inner.LastSignState)
 	if lastSignState.Equal(l.node.GetLastSignState()) {
-		l.mu.Unlock()
 		return nil
 	}
-	l.mu.Unlock()
+
+	if syncLastSignStateHook != nil {
+		syncLastSignStateHook("before-raft", lastSignState)
+	}
 
 	state, err := l.node.SyncLastSignState(lastSignState)
 	if err != nil {
 		return err
 	}
 
-	l.mu.Lock()
+	if syncLastSignStateHook != nil {
+		syncLastSignStateHook("before-write", state)
+	}
+
 	state.CopyToFilePV(&l.inner.LastSignState)
-	l.mu.Unlock()
 
 	return nil
 }
